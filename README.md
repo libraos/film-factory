@@ -25,8 +25,10 @@ and one serving `/v1/images`. Copy `skills/film-production/assets/env.example` t
 repository. Then run `python3 tools/film.py doctor` in a film project. Workers need network access
 for the endpoints: `libraos-core config set dispatch.codex_network true`.
 
-The script sends your prompts and keyframes to the endpoints you configure and to nothing else.
-It never prints or stores a key.
+The script sends your prompts and keyframes only to the endpoints you configure. When an image
+endpoint answers with a link instead of the image, the script downloads that link without the key.
+The key never leaves the configured host, even on a redirect. Endpoints must use `https://`
+(plain `http://` only on loopback, or with `FILM_ALLOW_HTTP=1`). The script never prints or stores a key.
 
 ## Tests
 

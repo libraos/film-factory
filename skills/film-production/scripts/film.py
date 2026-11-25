@@ -15,13 +15,18 @@ Settings come from the environment, or from KEY=VALUE lines in $FILM_ENV (defaul
   FILM_VIDEO_KEY / _KEY_FILE / _KEY_CMD      bearer key, a file holding it, or a command that prints it
   FILM_IMAGE_KEY / _KEY_FILE / _KEY_CMD      same for images (falls back to the video key)
   FILM_VIDEO_MODEL, FILM_IMAGE_MODEL, FILM_SIZE (default 896x512), FILM_FFMPEG, FILM_CHROME
-Standard library only. Keys are never printed or written to disk.
+  FILM_ALLOW_HTTP=1                          allow plain http:// bases on a host other than loopback (key unencrypted)
+Standard library only. Keys are never printed or written to disk, and never sent to a host other than the
+configured endpoint (a redirect to another host goes without the key). Paths must stay inside the project.
 """
-import argparse, base64, html, json, mimetypes, os, shutil, subprocess, sys, time, urllib.error, urllib.parse, urllib.request, uuid
+import argparse, base64, html, ipaddress, json, mimetypes, os, re, shutil, subprocess, sys, time, urllib.error, urllib.parse, urllib.request, uuid
 from tempfile import TemporaryDirectory
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONF = {}
+SHOT_NAME = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+RENDER_LIMIT = 2 * 3600       # seconds a render may poll before giving up
+IMAGE_CAP = 64 * 1024 * 1024  # largest image result fetched from a url
 
 
 def load_conf():
@@ -87,13 +92,69 @@ def run(cmd):
     return r
 
 
+def is_loopback(host):
+    host = (host or "").strip("[]").lower()
+    if host == "localhost" or host.endswith(".localhost"):
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def url_problem(url):
+    """Why this url may not be used, or None: https always, http only on loopback or with FILM_ALLOW_HTTP=1."""
+    u = urllib.parse.urlsplit(url)
+    if u.scheme == "https" and u.hostname:
+        return None
+    if u.scheme == "http" and u.hostname:
+        if is_loopback(u.hostname) or conf("FILM_ALLOW_HTTP") == "1":
+            return None
+        return ("plain http:// to %s would send data and the key unencrypted; use https://, "
+                "or set FILM_ALLOW_HTTP=1 to allow it" % u.hostname)
+    return "only https:// urls are used (got %s)" % (u.scheme + "://" if u.scheme else repr(url[:80]))
+
+
+def need_url(name):
+    url = need(name)
+    problem = url_problem(url)
+    if problem:
+        sys.exit("%s: %s" % (name, problem))
+    return url
+
+
+def origin(url):
+    u = urllib.parse.urlsplit(url)
+    return u.scheme.lower(), (u.hostname or "").lower(), u.port or {"http": 80, "https": 443}.get(u.scheme.lower())
+
+
+class SafeRedirect(urllib.request.HTTPRedirectHandler):
+    """Follows a redirect only to an allowed url, and drops the key when scheme, host or port changes."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        newurl = urllib.parse.urljoin(req.full_url, newurl)
+        problem = url_problem(newurl)
+        if problem:
+            raise urllib.error.HTTPError(req.full_url, code, "redirect refused: " + problem, headers, fp)
+        new = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new is not None and origin(newurl) != origin(req.full_url):
+            for h in [h for h in new.headers if h.lower() == "authorization"]:
+                del new.headers[h]
+            for h in [h for h in new.unredirected_hdrs if h.lower() == "authorization"]:
+                del new.unredirected_hdrs[h]
+        return new
+
+
+OPENER = urllib.request.build_opener(SafeRedirect)
+
+
 def http(method, url, token, body=None, ctype=None, to=None, timeout=600, soft=False):
     req = urllib.request.Request(url, body, method=method)
     req.add_header("Authorization", "Bearer " + token)
     if ctype:
         req.add_header("Content-Type", ctype)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with OPENER.open(req, timeout=timeout) as r:
             if to:
                 with open(to, "wb") as f:
                     shutil.copyfileobj(r, f)
@@ -121,28 +182,78 @@ def multipart(fields, files):
     return b"".join(parts), "multipart/form-data; boundary=" + b
 
 
+def fetch(url, to, timeout=120, cap=IMAGE_CAP):
+    """Download a url the endpoint returned: allowed urls only, no key, a timeout and a size cap."""
+    problem = url_problem(url)
+    if problem:
+        sys.exit("image result url refused: " + problem)
+    try:
+        with OPENER.open(urllib.request.Request(url), timeout=timeout) as r, open(to, "wb") as f:
+            got = 0
+            while True:
+                chunk = r.read(1 << 16)
+                if not chunk:
+                    break
+                got += len(chunk)
+                if got > cap:
+                    raise ValueError("larger than %d MiB" % (cap >> 20))
+                f.write(chunk)
+        return
+    except urllib.error.HTTPError as e:
+        msg = "HTTP %d %s" % (e.code, e.reason)
+    except Exception as e:  # network refused, timeout, DNS, too large
+        msg = str(e)
+    if os.path.exists(to):
+        os.remove(to)
+    sys.exit("image result download from %s failed: %s" % (urllib.parse.urlsplit(url).hostname, msg))
+
+
 def rel(p):
     return p if os.path.isabs(p) else os.path.join(ROOT, p)
 
 
+def path_problem(p):
+    """Why path p (relative to the project, or absolute) is not inside the project, or None."""
+    root = os.path.realpath(ROOT)
+    full = os.path.realpath(rel(p))
+    if full != root and os.path.commonpath([root, full]) == root:
+        return None
+    return "%s is outside the project (%s); use a path inside it" % (p, root)
+
+
+def inside(p, what):
+    """rel(p), after checking that it stays inside the project."""
+    problem = path_problem(p)
+    if problem:
+        sys.exit("%s: %s" % (what, problem))
+    return rel(p)
+
+
+def shot_name(name, what="shot"):
+    if not isinstance(name, str) or not SHOT_NAME.match(name):
+        sys.exit("%s name %r: use lowercase letters, digits and dashes, starting with a letter or digit" % (what, name))
+    return name
+
+
 # ---- keyframe ----
 def keyframe(a):
-    base, tok, model = need("FILM_IMAGE_BASE_URL").rstrip("/"), key("IMAGE"), need("FILM_IMAGE_MODEL")
+    base, tok, model = need_url("FILM_IMAGE_BASE_URL").rstrip("/"), key("IMAGE"), need("FILM_IMAGE_MODEL")
+    out = inside(a.out, "keyframe OUT")
+    ref = inside(a.ref, "--ref") if a.ref else None
     w, h = size()
     src = "1536x1024" if w >= h else "1024x1536"
     if a.ref:
-        body, ctype = multipart({"model": model, "size": src, "prompt": a.prompt}, {"image": rel(a.ref)})
+        body, ctype = multipart({"model": model, "size": src, "prompt": a.prompt}, {"image": ref})
         d = http("POST", base + "/images/edits", tok, body, ctype)
     else:
         d = http("POST", base + "/images/generations", tok, json.dumps({"model": model, "size": src, "prompt": a.prompt}).encode(), "application/json")
     item = d["data"][0]
-    out = rel(a.out)
     os.makedirs(os.path.dirname(out), exist_ok=True)
     raw = out + ".raw.png"
     if item.get("b64_json"):
         open(raw, "wb").write(base64.b64decode(item["b64_json"]))
     else:
-        urllib.request.urlretrieve(item["url"], raw)
+        fetch(item["url"], raw)
     run([ffmpeg(), "-v", "error", "-y", "-i", raw, "-vf", "scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d" % (w, h, w, h), out])
     os.remove(raw)
     print("keyframe %s (%dx%d)" % (a.out, w, h))
@@ -181,10 +292,12 @@ def conform_duration(clip, seconds):
 
 
 def render(a):
+    shot_name(a.name)
     shot = next((s for s in shots() if s["name"] == a.name), None)
     if not shot:
         sys.exit("no shot named %s in film/shots.json" % a.name)
-    base, tok = need("FILM_VIDEO_BASE_URL").rstrip("/"), key("VIDEO")
+    files = {n: inside(shot[k], "shot %s %s" % (a.name, k)) for n, k in (("input_reference", "first"), ("last_frame", "last")) if shot.get(k)}
+    base, tok = need_url("FILM_VIDEO_BASE_URL").rstrip("/"), key("VIDEO")
     seed = a.seed if a.seed is not None else shot.get("seed", 1)
     if a.resume:
         status_url = base + "/videos/" + urllib.parse.quote(a.resume, safe="")
@@ -192,13 +305,15 @@ def render(a):
         print("resumed %s as %s (seed %s)" % (a.name, a.resume, seed), flush=True)
     else:
         fields = {"model": need("FILM_VIDEO_MODEL"), "prompt": shot["prompt"], "seconds": str(shot.get("seconds", 5)), "size": need_size(), "seed": str(seed)}
-        files = {n: rel(shot[k]) for n, k in (("input_reference", "first"), ("last_frame", "last")) if shot.get(k)}
         body, ctype = multipart(fields, files)
         job = http("POST", base + "/videos", tok, body, ctype)
         status_url = base + "/videos/" + urllib.parse.quote(job["id"], safe="")
         print("submitted %s as %s (seed %s)" % (a.name, job["id"], seed), flush=True)
     last, t0 = None, time.time()
     while job.get("status") not in ("completed", "failed", "cancelled"):
+        if time.time() - t0 > RENDER_LIMIT:
+            sys.exit("render %s: no result after %d minutes (last status %s); try later with: render %s --resume %s"
+                     % (a.name, RENDER_LIMIT // 60, job.get("status"), a.name, status_url.rsplit("/", 1)[-1]))
         line = "%s %s%%" % (job.get("status"), job.get("progress", 0))
         if line != last:
             print("  %4ds %s" % (time.time() - t0, line), flush=True)
@@ -235,7 +350,9 @@ def card(scene, out):
     with open(page, "w") as page_file:
         page_file.write("<meta charset=utf-8><style>%s</style><div class=c><div class=k>%s</div><h1>%s</h1><h2>%s</h2></div>" % (CSS, e("kicker"), e("title"), e("sub")))
     with TemporaryDirectory(prefix="film-chrome-") as profile:
-        run([chrome, "--headless=new", "--no-sandbox", "--disable-gpu", "--hide-scrollbars",
+        # Chrome refuses to start as root with its sandbox on; anywhere else keep the sandbox.
+        sandbox = ["--no-sandbox"] if hasattr(os, "geteuid") and os.geteuid() == 0 else []
+        run([chrome, "--headless=new"] + sandbox + ["--disable-gpu", "--hide-scrollbars",
              "--user-data-dir=" + profile, "--window-size=1920,1080", "--screenshot=" + out, "file://" + page])
     os.remove(page)
 
@@ -258,6 +375,7 @@ def build(a):
             run([ffmpeg(), "-v", "error", "-y", "-loop", "1", "-framerate", "24", "-t", str(d), "-i", png, "-vf",
                  "%s,fade=t=in:st=0:d=0.3:color=white,fade=t=out:st=%.2f:d=0.3:color=white" % (canvas, d - 0.3)] + enc + [seg])
         elif s["type"] == "clip":
+            shot_name(s.get("name"), "scene %d clip" % i)
             clip = rel("clips/%s.mp4" % s["name"])
             if not os.path.exists(clip):
                 sys.exit("scene %d: clips/%s.mp4 is missing; render it first" % (i, s["name"]))
@@ -277,7 +395,7 @@ def build(a):
     music = plan.get("music")
     if music:
         d = duration(silent)
-        run([ffmpeg(), "-v", "error", "-y", "-i", silent, "-ss", str(plan.get("music_start", 0)), "-i", rel(music), "-filter_complex",
+        run([ffmpeg(), "-v", "error", "-y", "-i", silent, "-ss", str(plan.get("music_start", 0)), "-i", inside(music, "film/scenes.json music"), "-filter_complex",
              "[1:a]afade=t=in:st=0:d=1,afade=t=out:st=%.2f:d=2[a]" % (d - 2), "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac", "-t", str(d), out])
     else:
         shutil.copy(silent, out)
@@ -329,13 +447,15 @@ def check(a):
     w, h = size()
     for s in sl:
         n = s.get("name", "?")
+        ok(isinstance(n, str) and SHOT_NAME.match(n), "shot name %r: use lowercase letters, digits and dashes" % (n,))
         ok(all(s.get(k) for k in ("name", "prompt", "first", "last")), "shot %s needs name, prompt, first and last" % n)
         ok(5 <= float(s.get("seconds", 5)) <= 15, "shot %s: seconds must be 5 to 15" % n)
         ok(len(s.get("prompt", "")) >= 120, "shot %s: prompt is too short to steer the model" % n)
         for k in ("first", "last"):
             if s.get(k):
+                ok(not path_problem(s[k]), "shot %s: keyframe %s" % (n, path_problem(s[k])))
                 ok(ex(s[k]), "shot %s: keyframe %s is missing" % (n, s[k]))
-        if a.stage == "final":
+        if a.stage == "final" and isinstance(n, str) and SHOT_NAME.match(n):
             ok(ex("clips/%s.mp4" % n), "clips/%s.mp4 is missing" % n)
             ok(ex("sheets/%s.png" % n), "sheets/%s.png is missing" % n)
     if a.stage == "final":
@@ -360,7 +480,7 @@ def check(a):
 def doctor(a):
     print("size %s, ffmpeg %s" % (need_size(), "found" if (conf("FILM_FFMPEG") or shutil.which("ffmpeg")) else "MISSING"))
     for kind in ("VIDEO", "IMAGE"):
-        base = need("FILM_%s_BASE_URL" % kind).rstrip("/")
+        base = need_url("FILM_%s_BASE_URL" % kind).rstrip("/")
         d = http("GET", base + "/models", key(kind), timeout=30, soft=True)
         ids = [m.get("id") for m in d.get("data", [])] if "_error" not in d else []
         want = conf("FILM_%s_MODEL" % kind)

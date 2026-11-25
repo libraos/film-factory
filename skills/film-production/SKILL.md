@@ -16,7 +16,9 @@ outside the repository and never prints or stores a key.
 
 1. **Project.** If the repository has no `tools/film.py`, set it up from this skill's folder:
    `scripts/film.py` to `tools/film.py`; `assets/project/AGENTS.md` to `AGENTS.md` and `CLAUDE.md`;
-   `assets/project/gitignore` to `.gitignore`. Write the person's request, in their words, into
+   `assets/project/gitignore` to `.gitignore`. If `AGENTS.md`, `CLAUDE.md` or `.gitignore` already
+   exists, keep the person's content and append this skill's section to the end instead of
+   overwriting (skip lines already there). Write the person's request, in their words, into
    `film/brief.md`. Commit.
 2. **Ready?** Run `python3 tools/film.py doctor`. If a model is not listed or a setting is missing,
    tell the person in one or two plain sentences what is missing (see "Once per machine") and stop.
@@ -31,7 +33,8 @@ outside the repository and never prints or stores a key.
 6. **Film.** When the person agrees, in whatever words, hand stage 2 of `AGENTS.md` to one LibraOS Engine
    worker on the same branch: render the shots, check the contact sheets, write the scenes, add a score, build;
    budget 15 minutes plus 6 per shot at 896x512, or 15 plus 25 per shot at 1344x768; check
-   `python3 tools/film.py check final`.
+   `python3 tools/film.py check final`. If no worker can be started, do stage 2 of `AGENTS.md`
+   yourself, on the same branch, with the same check.
 7. **Deliver.** Link `out/film.mp4` and `sheets/film.png`. Say what was checked and what only a
    person can judge: motion, pacing and sound. Say if a worker reported a fault it could not fix.
 
@@ -59,9 +62,10 @@ The picture and wording rules workers follow are in the project's `AGENTS.md`.
 
 | Name | Meaning |
 |---|---|
-| `FILM_VIDEO_BASE_URL`, `FILM_IMAGE_BASE_URL` | bases ending in `/v1` |
+| `FILM_VIDEO_BASE_URL`, `FILM_IMAGE_BASE_URL` | bases ending in `/v1`; `https://`, or `http://` only on loopback |
 | `FILM_VIDEO_KEY`, `_KEY_FILE` or `_KEY_CMD` | bearer key, a file holding it, or a command that prints it; `FILM_IMAGE_*` likewise, falling back to the video key |
 | `FILM_VIDEO_MODEL`, `FILM_IMAGE_MODEL` | model names as the endpoint lists them |
 | `FILM_SIZE` | `896x512` (fast) or `1344x768` (final) |
 | `FILM_MUSIC_DIR` | folder of instrumental scores the team may use (optional; without it films are silent) |
 | `FILM_FFMPEG`, `FILM_CHROME` | paths, if not on `PATH` |
+| `FILM_ALLOW_HTTP` | `1` allows a plain `http://` base on a host other than loopback, which sends the key unencrypted (optional; off by default) |
