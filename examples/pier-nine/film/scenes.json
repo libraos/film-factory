@@ -1,0 +1,10 @@
+{
+  "scenes": [
+    {"type": "card", "title": "Pier Nine", "seconds": 3},
+    {"type": "clip", "name": "approach", "seconds": 7},
+    {"type": "clip", "name": "inside", "seconds": 7},
+    {"type": "card", "title": "Opens in June", "seconds": 3}
+  ],
+  "music": "film/music.flac",
+  "music_start": 0
+}

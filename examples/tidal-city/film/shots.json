@@ -1,0 +1,34 @@
+[
+  {
+    "name": "sunrise-dive",
+    "seconds": 6,
+    "prompt": "Dive smoothly forward and down through glowing sunrise clouds to reveal Tidal City, the first city on the open ocean: concentric white terraced islands, a circular harbour, slender white towers draped in hanging gardens, and one tallest tapering terraced tower at the rear centre. Warm sun from the left, endless turquoise sea. End just above the water outside the harbour, facing inward toward the tallest tower, sailing ships ahead. Monumental, bright, photoreal and awe-inspiring. One continuous steady camera move, no cuts.",
+    "first": "keyframes/sunrise-dive-first.png",
+    "last": "keyframes/sunrise-dive-last.png",
+    "seed": 1
+  },
+  {
+    "name": "harbour-race",
+    "seconds": 6,
+    "prompt": "Race forward low over sparkling turquoise water behind and alongside a fleet of tall sailing ships moving forward into the circular harbour of the same Tidal City. White sails billow and wakes stream behind; ships seen from behind or side, never reversing. White garden towers rise on both sides. Approach the base of the tallest terraced white tower directly ahead. Golden morning light from the left. Fast exhilarating smooth forward camera, coherent geometry. One continuous steady camera move, no cuts.",
+    "first": "keyframes/harbour-race-first.png",
+    "last": "keyframes/harbour-race-last.png",
+    "seed": 1
+  },
+  {
+    "name": "tower-climb",
+    "seconds": 7,
+    "prompt": "Climb vertically up the exterior of the tallest tapering white tower, starting at its water-level base in the harbour, passing lush hanging gardens, stepped terraces and cascading waterfalls, rising all the way to its crown. Camera faces the facade and gently tilts downward on reaching the summit to reveal the harbour and ocean beyond. White stone, emerald leaves, sparkling falling water, warm sunlight. One uninterrupted vertical ascent with a clear arrival at the top. One continuous steady camera move, no cuts.",
+    "first": "keyframes/tower-climb-first.png",
+    "last": "keyframes/tower-climb-last.png",
+    "seed": 1
+  },
+  {
+    "name": "dusk-pullback",
+    "seconds": 5,
+    "prompt": "Start close above the crown of the same tallest garden tower, matching the previous summit composition, now at dusk. Pull steadily backward and upward over the sea as the entire circular ocean city is revealed. Warm lights progressively illuminate windows, gardens, bridges and waterfront promenades, with gold reflections across blue water beneath a luminous violet peach dusk sky. End on a vast panoramic view of the whole city alone in the open ocean, majestic and celebratory. One continuous steady camera move, no cuts.",
+    "first": "keyframes/dusk-pullback-first.png",
+    "last": "keyframes/dusk-pullback-last.png",
+    "seed": 1
+  }
+]

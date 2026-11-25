@@ -1,0 +1,12 @@
+{
+  "size": "1344x768",
+  "scenes": [
+    {"type": "card", "kicker": "", "title": "Tidal City", "sub": "", "seconds": 3},
+    {"type": "clip", "name": "sunrise-dive"},
+    {"type": "clip", "name": "harbour-race"},
+    {"type": "clip", "name": "tower-climb"},
+    {"type": "clip", "name": "dusk-pullback"},
+    {"type": "card", "kicker": "", "title": "The ocean is open. 2040.", "sub": "", "seconds": 3}
+  ],
+  "music": "film/music.flac"
+}

@@ -1,0 +1,18 @@
+[
+  {
+    "name": "approach",
+    "seconds": 7,
+    "prompt": "At a calm, bright dawn on a quiet fjord, a level camera just above still water glides straight toward a small, dark timber floating sauna on a low pontoon. Begin with open water in the foreground and end closer, with the whole cabin and pontoon still visible. Keep the water-facing wall and its single wide, undivided window centered. Keep the cabin, pontoon, distant ridges, horizon, and dawn light consistent as the cabin grows in frame. The bare side wall stays solid timber. The water stays nearly mirror-still. No people or lettering. One continuous steady camera move, no cuts.",
+    "first": "keyframes/approach-first.png",
+    "last": "keyframes/approach-last.png",
+    "seed": 1
+  },
+  {
+    "name": "inside",
+    "seconds": 7,
+    "prompt": "Inside the same small sauna at dawn, face the single wide, undivided, water-facing window. Warm timber benches and walls frame the quiet fjord, low ridges and bright dawn sky. Glide gently forward toward the center of the window at a fixed height and angle, passing alongside the benches. End a little closer with the full window and some bench still in view. Keep the window frame, timber, benches, fjord horizon, and dawn light consistent. The room is empty and the water stays nearly mirror-still. No people or lettering. One continuous steady camera move, no cuts.",
+    "first": "keyframes/inside-first.png",
+    "last": "keyframes/inside-last.png",
+    "seed": 1
+  }
+]
